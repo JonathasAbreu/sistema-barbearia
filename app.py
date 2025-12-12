@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 
 # 1. Configuração da Página
-st.set_page_config(page_title="BarberManager", page_icon="✂️", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Gustado Do Corte", page_icon="✂️", layout="wide", initial_sidebar_state="collapsed")
 
 # --- ESTILIZAÇÃO CSS (Tema Azulado / Slate - Estilo Igreja) ---
 st.markdown("""
@@ -94,7 +94,7 @@ if "catalogo_servicos" not in st.session_state:
     ]
 
 # --- TELA INICIAL ---
-st.title("BarberManager ✂️")
+st.title("Gustavo Do Corte ✂️")
 st.markdown("Bem-vindo! Identifique-se para começar.")
 
 st.markdown("<br>", unsafe_allow_html=True) # Espaçamento extra
