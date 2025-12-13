@@ -1,0 +1,18 @@
+[theme]
+# Define o tema base como "dark" (fundo escuro, letras claras)
+base = "dark"
+
+# Cor primária (Botões e destaques) - Um dourado/amarelo de barbearia
+primaryColor = "#F63366" 
+
+# Cor do fundo (Background) - Preto/Cinza Escuro
+backgroundColor = "#0E1117"
+
+# Cor do fundo secundário (Barra lateral e caixas de input)
+secondaryBackgroundColor = "#262730"
+
+# Cor do texto (Garante que seja quase branco)
+textColor = "#FAFAFA"
+
+# Fonte do texto
+font = "sans serif"
