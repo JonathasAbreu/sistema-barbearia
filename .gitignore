@@ -1,0 +1,18 @@
+Ignorar arquivos temporários do Python
+
+pycache/
+*.py[cod]
+*$py.class
+
+Ignorar ambientes virtuais
+
+venv/
+.env
+
+--- SEGURANÇA ---
+
+Ignorar chaves de API e Segredos (NUNCA REMOVA ISSO)
+
+firestore_key.json
+secrets.toml
+.streamlit/secrets.toml
