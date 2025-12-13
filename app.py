@@ -1,53 +1,49 @@
 import streamlit as st
-import pandas as pd
-from datetime import datetime
+import time
 
-# 1. Configuração da Página
-st.set_page_config(page_title="BarberManager", page_icon="✂️", layout="wide", initial_sidebar_state="collapsed")
+# Configuração da Página
+st.set_page_config(
+    page_title="Barbearia Vip", 
+    page_icon="✂️", 
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-# --- ESTILIZAÇÃO CSS (Tema Azulado / Slate - Estilo Igreja) ---
+# --- CSS CUSTOMIZADO ---
 st.markdown("""
 <style>
-    /* Ocultar Sidebar */
+    /* Esconde menu padrão */
     [data-testid="stSidebar"] { display: none; }
     
-    /* Fundo Global Azul Noturno (Slate 900) */
-    .stApp {
-        background-color: #0f172a !important; 
-        color: #f8fafc !important;
-    }
+    /* Fundo e cores gerais */
+    .stApp { background-color: #0f172a !important; color: #f8fafc !important; }
     
-    /* Card da Home (Slate 800) */
-    .section-card {
-        background-color: #1e293b;
-        padding: 30px; 
-        border-radius: 16px; 
-        border: 1px solid #334155; /* Borda sutil */
+    /* Estilo dos Cards de Seleção */
+    .card-home {
+        background-color: #1e293b; /* Slate 800 */
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 40px 20px;
         text-align: center;
-        height: 100%;
+        transition: all 0.3s ease;
+        min-height: 250px; 
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     }
     
-    /* Efeito Hover no Card */
-    .section-card:hover {
+    .card-home:hover {
         transform: translateY(-5px);
-        border-color: #3b82f6; /* Azul Vibrante ao passar o mouse */
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
-        background-color: #334155;
+        border-color: #3b82f6; /* Azul destaque */
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
     }
     
-    /* Tipografia */
-    h1 { font-size: 3.5rem; margin: 0; } /* Ícones maiores */
-    h3 { color: #f8fafc; margin: 15px 0; font-weight: 600; }
-    p { color: #cbd5e1; margin: 0; font-size: 1rem; }
-    
-    /* Estilização dos Botões (Azul Vibrante) */
+    .icon-home { font-size: 4rem; margin-bottom: 15px; }
+    .title-home { font-size: 1.8rem; font-weight: 700; color: #f8fafc; margin-bottom: 5px; }
+    .desc-home { font-size: 0.95rem; color: #94a3b8; }
+
+    /* Estilo dos Botões */
     div.stButton > button {
         width: 100%;
         border-radius: 10px;
@@ -55,72 +51,94 @@ st.markdown("""
         border: none;
         background-color: #3b82f6;
         color: white !important;
-        height: 3em;
-        margin-top: 15px;
-        transition: all 0.2s;
+        height: 3.5em;
+        margin-top: 10px;
+        font-size: 1rem;
+        transition: background-color 0.2s;
     }
-    div.stButton > button:hover {
-        background-color: #2563eb; /* Azul um pouco mais escuro no hover */
-        transform: scale(1.02);
-    }
+    div.stButton > button:hover { background-color: #2563eb; }
     
-    /* Ajuste de Títulos da Página */
-    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+    /* Input Style para Login */
+    .stTextInput input {
+        background-color: #1e293b !important;
         color: #f8fafc !important;
+        border: 1px solid #334155 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# 2. INICIALIZAÇÃO DE DADOS
-if "agenda_hoje" not in st.session_state:
-    st.session_state.agenda_hoje = [
-        {"id": 1, "cliente": "João Silva", "hora": "14:00", "servico": "Corte Clássico", "valor_base": 50.00, "consumo": [], "status": "Em Andamento", "pagamento": None, "data": datetime.now().strftime("%Y-%m-%d")},
-        {"id": 2, "cliente": "Pedro Costa", "hora": "14:45", "servico": "Barba Terapia", "valor_base": 40.00, "consumo": [], "status": "Aguardando", "pagamento": None, "data": datetime.now().strftime("%Y-%m-%d")},
-    ]
+# --- ESTADO DE SESSÃO (Controle de telas) ---
+if 'show_login' not in st.session_state:
+    st.session_state.show_login = False
 
-if "catalogo_extras" not in st.session_state:
-    st.session_state.catalogo_extras = [
-        {"item": "Cerveja Heineken", "preco": 12.00, "icone": "🍺"},
-        {"item": "Refrigerante", "preco": 6.00, "icone": "🥤"},
-        {"item": "Pomada Modeladora", "preco": 35.00, "icone": "🧴"},
-        {"item": "Acabamento Sobrancelha", "preco": 15.00, "icone": "🤨"},
-    ]
-
-if "catalogo_servicos" not in st.session_state:
-    st.session_state.catalogo_servicos = [
-        {"servico": "Corte Cabelo", "preco": 50.00, "duracao": "30 min"},
-        {"servico": "Barba", "preco": 40.00, "duracao": "30 min"},
-        {"servico": "Corte + Barba", "preco": 80.00, "duracao": "60 min"},
-    ]
-
-# --- TELA INICIAL ---
-st.title("BarberManager ✂️")
-st.markdown("Bem-vindo! Identifique-se para começar.")
-
-st.markdown("<br>", unsafe_allow_html=True) # Espaçamento extra
-
-col_cli, col_barb = st.columns(2, gap="large")
-
-# COLUNA 1: ÁREA DO CLIENTE (Unificada)
-with col_cli:
-    st.markdown("""
-    <div class="section-card">
-        <h1>👤</h1>
-        <h3>Sou Cliente</h3>
-        <p>Agendar horário ou pagar conta</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("Acessar Área do Cliente", use_container_width=True):
-        st.switch_page("pages/1_comanda_digital.py")
-
-# COLUNA 2: ÁREA DO BARBEIRO
-with col_barb:
-    st.markdown("""
-    <div class="section-card">
-        <h1>💈</h1>
-        <h3>Sou Barbeiro</h3>
-        <p>Gestão, Agenda e Financeiro</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("Acessar Painel Administrativo", use_container_width=True):
+# --- LÓGICA DE LOGIN ---
+def verificar_login():
+    email = st.session_state.email_input
+    senha = st.session_state.senha_input
+    
+    if email == "gustavodocorte@salao.com" and senha == "123":
+        st.success("Login realizado com sucesso! Redirecionando...")
+        st.session_state['admin_logado'] = True
+        time.sleep(1) # Pequena pausa para ver a mensagem
         st.switch_page("pages/2_painel_barbeiro.py")
+    else:
+        st.error("E-mail ou senha incorretos.")
+
+# --- INTERFACE ---
+
+st.title("Gustavo Do Corte ✂️")
+
+# Se o botão de login foi clicado, mostra o formulário
+if st.session_state.show_login:
+    st.markdown("### 🔒 Acesso Restrito ao Barbeiro")
+    st.write("Insira suas credenciais para gerenciar o salão.")
+    
+    col_login1, col_login2, col_login3 = st.columns([1, 2, 1])
+    
+    with col_login2:
+        st.text_input("E-mail", key="email_input", placeholder="admin@salao.com.br")
+        st.text_input("Senha", type="password", key="senha_input", placeholder="••••••")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if st.button("Entrar no Sistema"):
+            verificar_login()
+            
+        if st.button("⬅️ Voltar", type="secondary"):
+            st.session_state.show_login = False
+            st.rerun()
+
+# Se não, mostra a tela inicial padrão (Cards)
+else:
+    st.write("Bem-vindo! Identifique-se para começar.")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Card Cliente
+        st.markdown("""
+        <div class="card-home">
+            <div class="icon-home">👤</div>
+            <div class="title-home">Sou Cliente</div>
+            <div class="desc-home">Agende ou consulte seus horários</div> 
+        </div>
+        """, unsafe_allow_html=True)
+            
+        if st.button("📄 Consultar Agendamento / Agendar", use_container_width=True):
+            st.switch_page("pages/1_comanda_digital.py")
+
+    with col2:
+        # Card Barbeiro
+        st.markdown("""
+        <div class="card-home">
+            <div class="icon-home">💈</div>
+            <div class="title-home">Sou Barbeiro</div>
+            <div class="desc-home">Gestão, Agenda e Financeiro</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Ao clicar aqui, ativamos o modo Login
+        if st.button("Acessar Painel Administrativo", use_container_width=True):
+            st.session_state.show_login = True
+            st.rerun()

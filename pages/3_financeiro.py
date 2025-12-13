@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
+import database as db  # IMPORTANTE: Importando o módulo do banco de dados
 
 st.set_page_config(page_title="Financeiro", page_icon="💰", layout="wide", initial_sidebar_state="collapsed")
 
-# CSS
+# --- CSS ---
 st.markdown("""
 <style>
     [data-testid="stSidebar"] { display: none; }
@@ -21,9 +22,9 @@ st.markdown("""
         margin-bottom: 10px;
     }
     .metric-value { font-size: 2rem; font-weight: bold; color: #4caf50; }
-    .metric-label { color: #cbd5e1; font-size: 0.9rem; } /* Cor mais clara para o label */
+    .metric-label { color: #cbd5e1; font-size: 0.9rem; }
 
-    /* Card de Transação (Novo Estilo para o Extrato) */
+    /* Card de Transação */
     .transaction-card {
         background-color: #1e293b; /* Slate 800 */
         padding: 15px;
@@ -36,8 +37,7 @@ st.markdown("""
     .trans-value { font-size: 1.3rem; font-weight: bold; color: #4caf50; }
     .trans-detail { font-size: 0.8rem; color: #94a3b8; }
 
-
-    /* Estilo dos Botões de Navegação (Topo) */
+    /* Botões */
     div.stButton > button {
         width: 100%;
         border-radius: 10px;
@@ -53,71 +53,52 @@ st.markdown("""
         transform: translateY(-2px);
     }
     
-    /* Garante que o texto geral e títulos sejam claros */
     h1, h2, h3, p, span, label { color: #f8fafc !important; }
     
-    /* Estilização dos inputs para o tema slate */
     .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stDateInput input {
         background-color: #1e293b !important;
         color: #f8fafc !important;
         border: 1px solid #334155 !important;
         border-radius: 8px;
     }
-
 </style>
 """, unsafe_allow_html=True)
 
 # Função para calcular comissões
 def calcular_comissao(item):
-    comissao_servico = item['valor_base'] * 0.50 # 50% para o barbeiro
+    # Garante que valor_base seja float
+    valor_base = float(item.get('valor_base', 0))
+    comissao_servico = valor_base * 0.50 # 50% para o barbeiro
     
-    total_extras = sum([p['preco'] for p in item['consumo']])
-    comissao_extras = total_extras * 0.10 # 10% na venda de produtos
+    consumo = item.get('consumo', [])
+    if consumo:
+        total_extras = sum([float(p.get('preco', 0)) for p in consumo])
+        comissao_extras = total_extras * 0.10 # 10% na venda de produtos
+    else:
+        comissao_extras = 0
     
     return comissao_servico + comissao_extras
 
 st.title("Financeiro & Comissões 💰")
 
-# --- MENU ADMINISTRATIVO (GERENTE) ---
+# --- MENU ADMINISTRATIVO ---
 col_nav1, col_nav2 = st.columns(2)
 with col_nav1:
-    # Botão para Painel (Agenda)
     if st.button("💈 Ir para Painel (Agenda)", use_container_width=True):
         st.switch_page("pages/2_painel_barbeiro.py")
 with col_nav2:
-    # Botão para Cadastros
     if st.button("⚙️ Ir para Cadastros", use_container_width=True):
         st.switch_page("pages/4_cadastros.py")
 
 st.markdown("---")
 
-# 1. PREPARAR DADOS (SIMULAÇÃO)
-if "agenda_hoje" not in st.session_state:
-    st.info("Nenhum dado financeiro disponível ainda.")
-    st.stop()
-
-# Simulação de Dados Históricos
-if len(st.session_state.agenda_hoje) > 0 and "data" not in st.session_state.agenda_hoje[0]:
-    hoje_str = datetime.now().strftime("%Y-%m-%d")
-    for item in st.session_state.agenda_hoje:
-        item["data"] = hoje_str
-
-    # Injeta dados fictícios apenas se tiver poucos dados
-    if len([x for x in st.session_state.agenda_hoje if x['status'] == 'Finalizado']) < 5:
-        ontem = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        mes_passado = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-        
-        st.session_state.agenda_hoje.extend([
-            {"id": 99, "cliente": "Cliente Ontem", "hora": "10:00", "servico": "Corte", "valor_base": 50.0, "consumo": [], "status": "Finalizado", "pagamento": "Pago", "data": ontem},
-            {"id": 98, "cliente": "Cliente Antigo", "hora": "11:00", "servico": "Barba", "valor_base": 40.0, "consumo": [], "status": "Finalizado", "pagamento": "Pago", "data": mes_passado}
-        ])
-
-# --- LAYOUT: ESPAÇO RESERVADO PARA OS CARDS (NO TOPO) ---
+# Placeholder para os Cards (será preenchido depois de calcular)
 container_metrics = st.container()
 
-st.markdown("<br>", unsafe_allow_html=True) # Espaçamento visual
+st.markdown("<br>", unsafe_allow_html=True)
 
-# --- FILTROS DE DATA (FICAM ABAIXO DOS CARDS VISUALMENTE) ---
+# --- FILTROS DE DATA ---
+# Definimos as datas primeiro para saber o que buscar no banco
 col_filtro, col_cal1, col_cal2 = st.columns([1, 1, 1])
 
 hoje = datetime.now().date()
@@ -160,39 +141,58 @@ else:
     with col_cal2:
         st.markdown(f"<small style='color:#cbd5e1'>Até:</small><br><b>{fim_filtro.strftime('%d/%m/%Y')}</b>", unsafe_allow_html=True)
 
-# --- PROCESSAMENTO DOS DADOS ---
-vendas_raw = [a for a in st.session_state.agenda_hoje if a.get('status') == "Finalizado"]
+
+# --- BUSCA REAL NO BANCO DE DADOS ---
 vendas_filtradas = []
 
-for v in vendas_raw:
-    data_venda_str = v.get("data", str(hoje))
-    try:
-        data_venda = datetime.strptime(data_venda_str, "%Y-%m-%d").date()
-    except:
-        data_venda = hoje
+# Calcula quantos dias tem no intervalo selecionado
+delta_dias = (fim_filtro - inicio_filtro).days + 1
 
-    if inicio_filtro <= data_venda <= fim_filtro:
-        vendas_filtradas.append(v)
+# Loop para buscar dia a dia no banco (garante dados reais)
+try:
+    with st.spinner('Buscando dados financeiros...'):
+        for i in range(delta_dias):
+            dia_corrente = inicio_filtro + timedelta(days=i)
+            dia_str = dia_corrente.strftime("%Y-%m-%d")
+            
+            # Busca no banco usando a função existente
+            agendamentos_dia = db.listar_agendamentos_por_data(dia_str)
+            
+            # Filtra apenas os finalizados
+            for ag in agendamentos_dia:
+                if ag.get('status') == 'Finalizado':
+                    # Garante que tem a data no objeto
+                    ag['data'] = dia_str
+                    vendas_filtradas.append(ag)
+except Exception as e:
+    st.error(f"Erro ao conectar com banco de dados: {e}")
 
+# --- PROCESSAMENTO DOS DADOS ---
 if not vendas_filtradas:
-    # Se não tiver vendas, mostra zeros nos cards lá em cima
+    # Se não tiver vendas, mostra zeros nos cards
     with container_metrics:
         c1, c2, c3 = st.columns(3)
         c1.markdown('<div class="metric-card"><div class="metric-label">Faturamento</div><div class="metric-value">R$ 0,00</div></div>', unsafe_allow_html=True)
         c2.markdown('<div class="metric-card"><div class="metric-label">A Pagar</div><div class="metric-value" style="color:#ff9800">R$ 0,00</div></div>', unsafe_allow_html=True)
         c3.markdown('<div class="metric-card"><div class="metric-label">Lucro Líquido</div><div class="metric-value" style="color:#2196f3">R$ 0,00</div></div>', unsafe_allow_html=True)
     
-    st.warning(f"Nenhuma venda encontrada no período de {inicio_filtro.strftime('%d/%m/%Y')} a {fim_filtro.strftime('%d/%m/%Y')}")
+    st.info(f"Nenhuma venda finalizada encontrada entre {inicio_filtro.strftime('%d/%m/%Y')} e {fim_filtro.strftime('%d/%m/%Y')}")
     st.stop()
 
 # Cálculos Finais
 dados_fin = []
-total_bruto = 0
-total_comissao = 0
+total_bruto = 0.0
+total_comissao = 0.0
 
 for v in vendas_filtradas:
-    valor_servico = v['valor_base']
-    valor_extras = sum([p['preco'] for p in v['consumo']])
+    valor_servico = float(v.get('valor_base', 0))
+    
+    consumo = v.get('consumo', [])
+    if consumo:
+        valor_extras = sum([float(p.get('preco', 0)) for p in consumo])
+    else:
+        valor_extras = 0.0
+        
     total_venda = valor_servico + valor_extras
     
     comissao = calcular_comissao(v)
@@ -203,9 +203,9 @@ for v in vendas_filtradas:
     
     dados_fin.append({
         "Data": v.get("data", str(hoje)),
-        "Barbeiro": "Barbeiro Padrão", 
-        "Cliente": v['cliente'],
-        "Serviço": v['servico'],
+        "Barbeiro": "Barbeiro", 
+        "Cliente": v.get('cliente', 'Desconhecido'),
+        "Serviço": v.get('servico', 'Serviço'),
         "Total Venda": total_venda,
         "Comissão": comissao,
         "Loja": lucro_loja,
@@ -215,7 +215,7 @@ for v in vendas_filtradas:
 df_fin = pd.DataFrame(dados_fin)
 lucro_liquido = total_bruto - total_comissao
 
-# --- PREENCHENDO O TOPO (CARDS) AGORA ---
+# --- PREENCHENDO O TOPO (CARDS) ---
 with container_metrics:
     c1, c2, c3 = st.columns(3)
 
@@ -245,55 +245,54 @@ with container_metrics:
 
 st.markdown("---")
 
-# 3. EXTRATO DETALHADO (RENDERIZADO COMO CARDS)
+# --- EXTRATO DETALHADO ---
 st.subheader(f"Extrato Detalhado ({len(vendas_filtradas)} Vendas)")
 
-# Ordena os dados por data (mais recente primeiro)
-df_fin['Data_Sort'] = pd.to_datetime(df_fin['Data'], format='%Y-%m-%d', errors='coerce')
-df_fin = df_fin.sort_values(by='Data_Sort', ascending=False)
+# Ordena os dados por data
+if not df_fin.empty:
+    df_fin['Data_Sort'] = pd.to_datetime(df_fin['Data'], format='%Y-%m-%d', errors='coerce')
+    df_fin = df_fin.sort_values(by='Data_Sort', ascending=False)
 
-
-# Renderiza cada linha como um Card de Transação
-# IMPORTANTE: Removida a indentação interna do HTML para evitar que o Markdown interprete como bloco de código
-for index, row in df_fin.iterrows():
-    total_display = f"R$ {row['Total Venda']:.2f}"
-    comissao_display = f"R$ {row['Comissão']:.2f}"
-    lucro_display = f"R$ {row['Loja']:.2f}"
-    
-    # Formata a data para BR
-    data_formatada = datetime.strptime(str(row['Data']), '%Y-%m-%d').strftime('%d/%m/%Y')
-    
-    st.markdown(f"""
-<div class="transaction-card">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span class="trans-client">{row['Cliente']}</span>
-        <span class="trans-value">{total_display}</span>
+    for index, row in df_fin.iterrows():
+        total_display = f"R$ {row['Total Venda']:.2f}"
+        comissao_display = f"R$ {row['Comissão']:.2f}"
+        lucro_display = f"R$ {row['Loja']:.2f}"
+        
+        try:
+            data_formatada = datetime.strptime(str(row['Data']), '%Y-%m-%d').strftime('%d/%m/%Y')
+        except:
+            data_formatada = str(row['Data'])
+        
+        st.markdown(f"""
+    <div class="transaction-card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="trans-client">{row['Cliente']}</span>
+            <span class="trans-value">{total_display}</span>
+        </div>
+        <div style="margin-top:5px; padding-top:5px; border-top:1px solid #334155;">
+            <p class="trans-detail" style="margin-bottom:2px;">
+                Serviço: <b style="color:#3b82f6 !important;">{row['Serviço']}</b>
+            </p>
+            <p class="trans-detail" style="margin-bottom:2px;">
+                Data: {data_formatada} • Pagamento: {row['Pagamento']}
+            </p>
+            <p class="trans-detail">
+                Comissão: <span style="color:#ff9800;">{comissao_display}</span> | Lucro da Casa: <span style="color:#2196f3;">{lucro_display}</span>
+            </p>
+        </div>
     </div>
-    <div style="margin-top:5px; padding-top:5px; border-top:1px solid #334155;">
-        <p class="trans-detail" style="margin-bottom:2px;">
-            Serviço: <b style="color:#3b82f6 !important;">{row['Serviço']}</b>
-        </p>
-        <p class="trans-detail" style="margin-bottom:2px;">
-            Data: {data_formatada} • Pagamento: {row['Pagamento']}
-        </p>
-        <p class="trans-detail">
-            Comissão: <span style="color:#ff9800;">{comissao_display}</span> | Lucro da Casa: <span style="color:#2196f3;">{lucro_display}</span>
-        </p>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 
 st.markdown("---")
 
-# 4. GRÁFICO
+# --- GRÁFICO ---
 if not df_fin.empty:
     if (fim_filtro - inicio_filtro).days > 1:
         fig = px.bar(df_fin, x='Data', y='Total Venda', title="Faturamento por Dia", template='plotly_dark')
     else:
         fig = px.bar(df_fin, x='Cliente', y=['Loja', 'Comissão'], title="Divisão por Atendimento", barmode='stack', template='plotly_dark')
     
-    # --- MELHORIA: Fundo transparente para o gráfico ---
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", 
         plot_bgcolor="rgba(0,0,0,0)"

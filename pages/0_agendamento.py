@@ -4,7 +4,13 @@ from datetime import datetime, timedelta
 import uuid
 import database as db # Conexão com Banco
 
+# Configuração da página
 st.set_page_config(page_title="Agendar Horário", page_icon="📅", layout="wide", initial_sidebar_state="collapsed")
+
+# --- LÓGICA DE ESTADO (SESSION STATE) ---
+# Garante que o sistema lembre que o agendamento foi feito
+if 'sucesso_agendamento' not in st.session_state:
+    st.session_state['sucesso_agendamento'] = False
 
 # --- CSS (Tema Azulado / Slate) ---
 st.markdown("""
@@ -27,8 +33,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- CARREGA SERVIÇOS DO BANCO ---
-servicos_db = db.listar_servicos()
-# Se o banco estiver vazio (ou erro de conexão), usa um fallback para não travar a tela
+try:
+    servicos_db = db.listar_servicos()
+except AttributeError:
+    servicos_db = [] # Fallback se a função não existir ainda
+
+# Fallback se o banco estiver vazio ou der erro
 if not servicos_db:
     servicos_db = [{"servico": "Corte Padrão", "preco": 50.00, "duracao": "30 min"}]
 
@@ -77,8 +87,11 @@ with st.container():
 
     # BUSCA NO BANCO OS AGENDAMENTOS DO DIA PARA BLOQUEAR
     data_str = data_agendamento.strftime("%Y-%m-%d")
-    agendamentos_dia = db.listar_agendamentos_por_data(data_str)
-    horarios_ocupados = [a['hora'] for a in agendamentos_dia if a['status'] != 'Cancelado']
+    try:
+        agendamentos_dia = db.listar_agendamentos_por_data(data_str)
+        horarios_ocupados = [a['hora'] for a in agendamentos_dia if a['status'] != 'Cancelado']
+    except AttributeError:
+        horarios_ocupados = [] # Fallback se função não existir
     
     horarios_livres = [h for h in horarios_possiveis if h not in horarios_ocupados]
     
@@ -95,31 +108,58 @@ with st.container():
     nome_cliente = st.text_input("Seu Nome Completo", placeholder="Digite seu nome")
     
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("✅ Confirmar Agendamento", type="primary", use_container_width=True):
-        if nome_cliente and horario_escolhido:
-            # Cria objeto
-            novo_agendamento = {
-                "id": str(uuid.uuid4()),
-                "cliente": nome_cliente,
-                "hora": horario_escolhido,
-                "data": data_str,
-                "servico": servico_selecionado['servico'],
-                "valor_base": servico_selecionado['preco'],
-                "consumo": [],
-                "status": "Aguardando", # Começa como aguardando
-                "pagamento": None
-            }
-            
-            # SALVA NO FIREBASE
-            db.salvar_agendamento(novo_agendamento)
-            
-            st.success(f"Agendado com sucesso para {data_str} às {horario_escolhido}!")
-            st.balloons()
-            
-            if st.button("🏠 Voltar ao Início"):
-                st.switch_page("app.py")
-        else:
-            st.warning("⚠️ Preencha nome e horário.")
 
-st.markdown("<br>", unsafe_allow_html=True)
-if st.button("⬅️ Cancelar / Voltar"): st.switch_page("app.py")
+    # --- LÓGICA DE BOTÕES COM SESSION STATE ---
+    
+    if not st.session_state['sucesso_agendamento']:
+        # MOSTRA ESTES BOTÕES APENAS SE AINDA NÃO AGENDOU
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
+             if st.button("⬅️ Cancelar / Voltar", use_container_width=True):
+                 st.switch_page("app.py")
+        
+        with col2:
+            confirmar = st.button("✅ Confirmar Agendamento", type="primary", use_container_width=True)
+
+        if confirmar:
+            if nome_cliente and horario_escolhido:
+                # Cria objeto
+                novo_agendamento = {
+                    "id": str(uuid.uuid4()),
+                    "cliente": nome_cliente,
+                    "hora": horario_escolhido,
+                    "data": data_str,
+                    "servico": servico_selecionado['servico'],
+                    "valor_base": servico_selecionado['preco'],
+                    "consumo": [],
+                    "status": "Aguardando", 
+                    "pagamento": None,
+                    "criado_em": datetime.now()
+                }
+                
+                # SALVA NO FIREBASE
+                try:
+                    db.salvar_agendamento(novo_agendamento)
+                    
+                    # Marca sucesso e recarrega
+                    st.session_state['sucesso_agendamento'] = True
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+
+            else:
+                st.warning("⚠️ Preencha nome e horário.")
+
+    else:
+        # --- TELA DE SUCESSO ---
+        # Botões de confirmar sumiram, agora só aparece o de voltar
+        st.success(f"Agendado com sucesso para {data_str} às {horario_escolhido}!")
+        st.balloons()
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Botão que limpa o estado e volta
+        if st.button("🏠 Voltar ao Início", type="primary", use_container_width=True):
+            del st.session_state['sucesso_agendamento']
+            st.switch_page("app.py")
